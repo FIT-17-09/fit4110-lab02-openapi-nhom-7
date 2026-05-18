@@ -1,109 +1,114 @@
-# Biên bản đàm phán hợp đồng API
+# negotiation-log.md
 
-- Cặp đàm phán: pair-01-camera-ai-vision
-- Product: Smart Campus
-- Provider: AI Vision Service
-- Consumer: Camera Stream Service
-- Phiên: v1.0
-- Ngày: <dd/mm/yyyy>
+# Negotiation Log — Camera Stream ↔ AI Vision
 
----
+## Pair Information
 
-## Issue #1
-
-- Raised by: Consumer
-- Endpoint: POST /vision/detect
-- Concern: Chưa rõ nên gửi ảnh dạng image_url hay multipart upload
-- Proposal:
-  - Consumer: dùng image_url
-  - Provider: hỗ trợ cả multipart
-- Resolution: Accepted (image_url)
-- Rationale: image_url nhẹ hơn, dễ scale và giảm tải hệ thống
-- Impact: giảm băng thông, dễ tích hợp
+- Provider Team: Nhóm 7 — Camera Stream Service
+- Consumer Team: Nhóm 10 — AI Vision Service
+- Contract Version: v1.0
 
 ---
 
-## Issue #2
+## Issue 1
 
-- Raised by: Provider
-- Endpoint: POST /vision/detect
-- Concern: Trả kết quả đồng bộ hay bất đồng bộ
-- Proposal:
-  - Consumer: muốn nhận kết quả ngay
-  - Provider: đề xuất trả detectionId khi hệ thống quá tải
-- Resolution: Modified (hỗ trợ cả 2 bằng oneOf)
-- Rationale: đảm bảo linh hoạt và mở rộng hệ thống
-- Impact: cần thêm detectionId và endpoint GET
+### Context
+Field naming mismatch.
 
----
+### Problem
+Consumer dùng camId còn provider dùng camera_id.
 
-## Issue #3
+### Decision
+Use camera_id.
 
-- Raised by: Provider
-- Endpoint: POST /vision/detect
-- Concern: Kích thước ảnh có thể quá lớn gây chậm hệ thống
-- Proposal:
-  - Consumer: không giới hạn
-  - Provider: giới hạn tối đa 5MB
-- Resolution: Accepted (max 5MB)
-- Rationale: đảm bảo performance và tránh overload
-- Impact: cần validate request phía Consumer
+### Rationale
+Unified snake_case convention.
 
 ---
 
-## Issue #4
+## Issue 2
 
-- Raised by: Provider
-- Endpoint: All endpoints
-- Concern: Bảo mật API
-- Proposal:
-  - Consumer: không bắt buộc auth
-  - Provider: yêu cầu Bearer token
-- Resolution: Accepted (bắt buộc auth)
-- Rationale: đảm bảo an toàn hệ thống
-- Impact: Consumer phải gửi Authorization header
+### Context
+Image upload format.
 
----
+### Problem
+Multipart upload phức tạp khi test mock server.
 
-## Issue #5
+### Decision
+Use image_url JSON field.
 
-- Raised by: Consumer
-- Endpoint: All endpoints
-- Concern: Format lỗi không thống nhất
-- Proposal:
-  - Consumer: muốn dễ parse lỗi
-  - Provider: dùng chuẩn Problem Details
-- Resolution: Accepted (RFC 7807)
-- Rationale: chuẩn industry, dễ mở rộng
-- Impact: thêm schema Problem trong OpenAPI
+### Rationale
+Simpler than multipart upload.
 
 ---
 
-## Issue #6
+## Issue 3
 
-- Raised by: Consumer
-- Endpoint: POST /vision/detect
-- Concern: Thời gian phản hồi lâu ảnh hưởng realtime
-- Proposal:
-  - Consumer: < 1 giây
-  - Provider: < 2 giây
-- Resolution: Modified (< 1.5 giây)
-- Rationale: cân bằng giữa hiệu năng và khả năng xử lý
-- Impact: cần cơ chế retry và timeout
+### Context
+Detection response structure.
 
----
+### Problem
+Analytics cần tracking detection.
 
-# Chốt hợp đồng v1.0
+### Decision
+Return detection_id and confidence.
 
-Provider sign-off:  ___________________  
-Consumer sign-off:  ___________________  
-Witness (GV/TA):    ___________________  
-Date:               ___________________  
+### Rationale
+Support analytics and logging.
 
 ---
 
-## Ghi chú warning nếu Spectral còn cảnh báo
+## Issue 4
 
-| Warning | Lý do chấp nhận tạm thời | Kế hoạch sửa |
+### Context
+Timeout handling.
+
+### Problem
+AI detect có thể block camera service.
+
+### Decision
+Timeout after 3 seconds.
+
+### Rationale
+Avoid blocking camera service.
+
+---
+
+## Issue 5
+
+### Context
+Error response format.
+
+### Problem
+Hai nhóm dùng format lỗi khác nhau.
+
+### Decision
+Use Problem Details.
+
+### Rationale
+OpenAPI standard.
+
+---
+
+## Issue 6
+
+### Context
+Model information endpoint.
+
+### Problem
+Monitoring cần model metadata.
+
+### Decision
+Provide GET /vision/models/info.
+
+### Rationale
+Monitoring and debugging support.
+
+---
+
+## Final Sign-off
+
+| Team | Role | Status |
 |---|---|---|
-| Không có warning | - | - |
+| Nhóm 7 | Provider | Approved |
+| Nhóm 10 | Consumer | Approved |

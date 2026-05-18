@@ -16,4 +16,4 @@ API sử dụng semantic versioning.
 ## Nguyên tắc
 
 - Không thay đổi schema cũ nếu chưa tăng version
-- Luôn đảm bảo backward compatibility khi có thể
+- Luôn đảm bảo backward compatibility khi có thể.

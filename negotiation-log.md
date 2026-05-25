@@ -1,168 +1,135 @@
-# negotiation-log.md
-
-# Negotiation Log — Camera Stream ↔ AI Vision
-
-## Pair Information
+# Biên bản đàm phán hợp đồng API
 
 - Cặp đàm phán: pair-01-camera-ai-vision
 - Product: Smart Campus
-- Provider Team: Nhóm 10 — AI Vision Service
-- Consumer Team: Nhóm 7 — Camera Stream Service
-- Contract Version: v1.0
+- Provider: AI Vision Service
+- Consumer: Camera Stream Service
+- Phiên: v1.0
 - Ngày: 20/05/2026 (Cập nhật đối soát: 22/05/2026)
 
 ---
 
-## Issue 1
+## Issue #1
 
-### Context
-Field naming mismatch.
-
-### Problem
-Consumer dùng camId còn provider dùng camera_id.
-
-### Decision
-Thống nhất camera_id (snake_case) và bắt buộc trong request.
-
-### Rationale
-Đồng bộ convention và tránh lệch schema giữa hai bên.
-
----
-
-## Issue 2
-
-### Context
-Image upload format.
-
-### Problem
-Multipart upload phức tạp khi test mock server.
-
-### Decision
-Chỉ dùng image_url trong JSON payload.
-
-### Rationale
-Đơn giản hóa mock/test và phù hợp thực tế streaming.
+- Raised by: Consumer
+- Endpoint: POST /api/v1/vision/analyze
+- Concern: Cách truyền dữ liệu hình ảnh
+- Proposal:
+  - Consumer: chỉ sử dụng image_url để gửi ảnh
+  - Provider: đề xuất hỗ trợ multipart upload
+- Resolution: Accepted (image_url)
+- Rationale:
+  - Camera Stream tối ưu băng thông và hiệu năng
+  - image_url phù hợp với hệ thống streaming thực tế
+- Impact:
+  - Consumer phải đảm bảo URL hợp lệ và truy cập được
+  - Provider cần fetch ảnh từ URL
 
 ---
 
-## Issue 3
+## Issue #2
 
-### Context
-Kiến trúc xử lý và thời gian phản hồi.
-
-### Problem
-AI detect có thể block camera service.
-
-### Decision
-Dùng cơ chế asynchronous/non-blocking, trả 202 Accepted và xử lý ngầm.
-
-### Rationale
-Giải phóng luồng camera, giảm nghẽn thiết bị biên.
-
----
-
-## Issue 4
-
-### Context
-Retry và duplicate request.
-
-### Problem
-Retry gây trùng xử lý và khó truy vết log.
-
-### Decision
-Bổ sung correlationId trong request để idempotency.
-
-### Rationale
-Giảm xử lý trùng, dễ trace log đa hệ.
+- Raised by: Consumer
+- Endpoint: POST /api/v1/vision/analyze
+- Concern: Thời gian phản hồi và kiến trúc xử lý
+- Proposal:
+  - Consumer: yêu cầu phản hồi nhanh realtime để giải phóng luồng camera
+  - Provider: đề xuất đẩy tác vụ nặng vào hàng đợi chạy ngầm
+- Resolution: Accepted (Asynchronous / Non-blocking)
+- Rationale:
+  - Camera cần giải phóng luồng ngay lập tức để tránh nghẽn mạch thiết bị biên
+  - AI Vision cần thời gian tải ảnh về RAM và suy luận mô hình YOLOv8
+- Impact:
+  - Provider trả phản hồi tức thời HTTP 202 Accepted với nội dung nhận dạng dạng hàng đợi
+  - Quá trình xử lý AI diễn ra ngầm; kết quả được Provider chủ động phát tán qua Webhook (không yêu cầu Consumer polling).
 
 ---
 
-## Issue 5
+## Issue #3
 
-### Context
-Giới hạn dung lượng ảnh.
-
-### Problem
-Ảnh lớn ảnh hưởng performance và dễ overload.
-
-### Decision
-Giới hạn dung lượng ảnh tối đa 5MB.
-
-### Rationale
-Bảo vệ hệ thống AI Vision và giảm timeout.
-
----
-
-## Issue 6
-
-### Context
-Chuẩn hóa lỗi.
-
-### Problem
-Hai nhóm dùng format lỗi khác nhau.
-
-### Decision
-Dùng Problem Details với `application/problem+json` cho toàn bộ lỗi 4xx/5xx.
-
-### Rationale
-Chuẩn hóa parsing, tuân thủ RFC 7807/9457.
+- Raised by: Consumer
+- Endpoint: POST /api/v1/vision/analyze
+- Concern: Retry gây duplicate request
+- Proposal:
+  - Consumer: gửi correlationId trong Request Body
+  - Provider: dùng để detect duplicate và truy vết log
+- Resolution: Accepted
+- Rationale:
+  - Tránh xử lý trùng khi hệ thống mạng xảy ra retry
+  - Đảm bảo tính Idempotency cho hệ thống
+- Impact:
+  - Provider phải lưu và kiểm tra correlationId trước khi đưa vào hàng đợi
+  - Consumer phải generate unique id (UUID/String độc nhất) cho mỗi khung hình
 
 ---
 
-## Issue 7
+## Issue #4
 
-### Context
-Thông tin ngữ cảnh phục vụ phân tích.
-
-### Problem
-Thiếu camera_id và timestamp trong request.
-
-### Decision
-Bổ sung camera_id và timestamp bắt buộc trong AnalyzeRequest.
-
-### Rationale
-Hỗ trợ phân tích theo không gian và thời gian.
-
----
-
-## Issue 8
-
-### Context
-Detection response structure.
-
-### Problem
-Analytics cần tracking detection.
-
-### Decision
-Return detection_id và confidence trong response detection.
-
-### Rationale
-Hỗ trợ analytics và logging.
+- Raised by: Provider
+- Endpoint: POST /api/v1/vision/analyze
+- Concern: Kích thước ảnh lớn ảnh hưởng performance
+- Proposal:
+  - Consumer: không giới hạn
+  - Provider: giới hạn dung lượng file ảnh tối đa 5MB
+- Resolution: Accepted (max 5MB)
+- Rationale:
+  - Bảo vệ hệ thống AI Vision khỏi nguy cơ overload và timeout trên môi trường CPU
+- Impact:
+  - Consumer phải đảm bảo ảnh truyền tải qua URL ≤ 5MB
+  - Provider thực hiện validate dung lượng trước khi kích hoạt hàng đợi ngầm
 
 ---
 
-## Issue 9
+## Issue #5
 
-### Context
-Model information endpoint.
-
-### Problem
-Monitoring cần model metadata.
-
-### Decision
-Provide GET /vision/models/info.
-
-### Rationale
-Phục vụ monitoring và debug.
+- Raised by: Provider
+- Endpoint: All endpoints
+- Concern: Bảo mật API
+- Proposal:
+  - Consumer: không cần auth vì chạy mạng nội bộ
+  - Provider: yêu cầu Bearer token qua Gateway tòa nhà
+- Resolution: Accepted (bắt buộc auth)
+- Rationale:
+  - Bảo vệ hệ thống khỏi các truy cập trái phép xuyên suốt các microservices
+- Impact:
+  - Consumer bắt buộc phải đính kèm cấu hình Authorization header với định dạng `Bearer [Token]` trong mọi request
 
 ---
 
-## Final Sign-off
+## Issue #6
 
-| Team | Role | Status |
-|---|---|---|
-| Nhóm 7 | Consumer | Approved |
-| Nhóm 10 | Provider | Approved |
+- Raised by: Consumer
+- Endpoint: All endpoints
+- Concern: Chuẩn hóa dữ liệu lỗi
+- Proposal:
+  - Consumer: cần format lỗi cố định, dễ parse tự động
+  - Provider: dùng chuẩn Problem Details (RFC 7807 / RFC 9457)
+- Resolution: Accepted
+- Rationale:
+  - Tuân thủ tiêu chuẩn công nghiệp (Industry Standard)
+  - Dễ dàng xử lý fallback và debug lỗi hệ thống
+- Impact:
+  - Tất cả các phản hồi lỗi (400, 401, 500) trả về Content-Type: `application/problem+json`
+
+---
+
+## Issue #7
+
+- Raised by: Consumer
+- Endpoint: POST /api/v1/vision/analyze
+- Concern: Thiếu thông tin ngữ cảnh phục vụ phân tích dữ liệu không gian và thời gian
+- Proposal:
+  - Consumer: bổ sung camera_id và timestamp vào gói tin gốc
+  - Provider: đồng ý và đưa vào schema bắt buộc
+- Resolution: Accepted
+- Rationale:
+  - Giúp hệ thống AI và cấu trúc dữ liệu Analytics sau này phân tích chính xác vị trí/thời điểm
+- Impact:
+  - Schema Request Body bổ sung hai trường bắt buộc: camera_id (String) và timestamp (ISO 8601 UTC)
+
+---
+
+# Chốt hợp đồng v1.0
 
 Provider sign-off:  ___________________  
 Consumer sign-off:  ___________________  

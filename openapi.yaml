@@ -1,9 +1,12 @@
 openapi: 3.1.0
 
 info:
-  title: Camera Stream Service API
+  title: Camera Stream ↔ AI Vision Contract API
   version: 1.0.0
-  description: API tiếp nhận và xử lý luồng camera cho Smart Campus.
+  description: |
+    Đặc tả hợp đồng giữa Camera Stream Service (Consumer) và AI Vision Service (Provider).
+    Hệ thống dùng cơ chế asynchronous để giải phóng luồng camera.
+    Tất cả request bắt buộc xác thực Bearer Token.
   contact:
     name: FIT4110 Team 7
     email: team7@fit4110.local
@@ -11,6 +14,8 @@ info:
 servers:
   - url: http://localhost:4010
     description: Prism Mock Server
+  - url: http://localhost:8000
+    description: Local / Docker Sandbox
 
 tags:
   - name: health
@@ -123,6 +128,34 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/v1/vision/analyze:
+    post:
+      operationId: analyzeCameraFrame
+      tags: [vision]
+      summary: Camera Stream đẩy dữ liệu ảnh về AI Vision xử lý
+      description: |
+        Endpoint do AI Vision cung cấp. Camera Stream sẽ gửi image_url kèm các context (camera_id, timestamp, correlationId).
+        AI Vision validate dữ liệu (ảnh ≤ 5MB) và phản hồi lập tức 202 Accepted để giải phóng luồng camera.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeRequest'
+      responses:
+        '202':
+          description: Đã tiếp nhận thành công và đưa vào hàng đợi xử lý ngầm (Background Queue).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyzeResponseSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
 components:
 
   securitySchemes:
@@ -130,6 +163,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: Nhập token xác thực phân quyền với Role vision-analyzer.
 
   schemas:
 
@@ -139,6 +173,12 @@ components:
         status:
           type: string
           example: ok
+        service:
+          type: string
+          example: camera-stream
+        timestamp:
+          type: string
+          format: date-time
 
     CameraConnectRequest:
       type: object
@@ -150,6 +190,7 @@ components:
           type: string
         rtsp_url:
           type: string
+          format: uri
 
     CameraStatus:
       type: object
@@ -162,7 +203,7 @@ components:
             - ONLINE
             - OFFLINE
         lastDetectedAt:
-          type: [string, 'null']
+          type: [string, "null"]
           format: date-time
 
     FrameResponse:
@@ -172,22 +213,29 @@ components:
           type: string
         image_url:
           type: string
+          format: uri
 
     DetectionRequest:
       type: object
+      required:
+        - camera_id
+        - image_url
       properties:
         camera_id:
           type: string
         image_url:
           type: string
+          format: uri
 
     DetectionResult:
       oneOf:
         - $ref: '#/components/schemas/PersonDetection'
         - $ref: '#/components/schemas/VehicleDetection'
-
       discriminator:
         propertyName: objectType
+        mapping:
+          PERSON: '#/components/schemas/PersonDetection'
+          VEHICLE: '#/components/schemas/VehicleDetection'
 
     PersonDetection:
       type: object
@@ -199,6 +247,8 @@ components:
           type: string
         confidence:
           type: number
+          minimum: 0
+          maximum: 1
 
     VehicleDetection:
       type: object
@@ -210,18 +260,77 @@ components:
           type: string
         confidence:
           type: number
+          minimum: 0
+          maximum: 1
 
-    Problem:
+    AnalyzeRequest:
       type: object
+      required:
+        - camera_id
+        - image_url
+        - timestamp
+        - correlationId
+      properties:
+        camera_id:
+          type: string
+          description: Mã định danh duy nhất của thiết bị camera ghi hình.
+          example: cam-gate-01-entry
+        image_url:
+          type: string
+          format: uri
+          description: Đường dẫn URL ảnh cần phân tích (tối đa 5MB).
+          example: https://ultralytics.com/images/bus.jpg
+        timestamp:
+          type: string
+          format: date-time
+          description: Thời điểm ghi hình chính xác tại camera (ISO 8601 UTC).
+          example: 2026-05-22T10:30:00Z
+        correlationId:
+          type: string
+          description: Id duy nhất để chống trùng lặp và truy vết log.
+          example: corr-b2-b4-b6-9912a
+
+    AnalyzeResponseSuccess:
+      type: object
+      properties:
+        status:
+          type: string
+          example: received
+        message:
+          type: string
+          example: Anh da duoc dua vao hang doi xu ly ngam.
+
+    ProblemDetails:
+      type: object
+      description: Cấu trúc chuẩn hóa lỗi theo tiêu chuẩn RFC 7807/9457.
+      required:
+        - type
+        - title
+        - status
+        - detail
       properties:
         type:
           type: string
+          format: uri
+          description: URL tham chiếu đến tài liệu mô tả loại lỗi này.
+          example: https://api.smartcampus.edu.vn/errors/bad-request
         title:
           type: string
+          description: Tóm tắt ngắn gọn về loại lỗi.
+          example: Invalid Request Payload
         status:
           type: integer
+          description: HTTP status code trả về.
+          example: 400
         detail:
           type: string
+          description: Giải thích chi tiết nguyên nhân lỗi.
+          example: The field image_url is required and must be a valid URI.
+        instance:
+          type: string
+          format: uri
+          description: URI cụ thể của request xảy ra lỗi.
+          example: /api/v1/vision/analyze
 
   responses:
 
@@ -230,18 +339,25 @@ components:
       content:
         application/problem+json:
           schema:
-            $ref: '#/components/schemas/Problem'
+            $ref: '#/components/schemas/ProblemDetails'
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
 
     NotFound:
       description: Resource not found
       content:
         application/problem+json:
           schema:
-            $ref: '#/components/schemas/Problem'
+            $ref: '#/components/schemas/ProblemDetails'
 
     InternalServerError:
       description: Internal server error
       content:
         application/problem+json:
           schema:
-            $ref: '#/components/schemas/Problem'
+            $ref: '#/components/schemas/ProblemDetails'
